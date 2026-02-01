@@ -1,0 +1,90 @@
+import axios from 'axios';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 30000,
+});
+
+export const api = {
+  // Track a single frame
+  trackFrame: async (data) => {
+    try {
+      const response = await apiClient.post('/api/track', data);
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
+
+  // Upload image file for tracking
+  trackFile: async (file, modelType = 'yolov8', enableTracking = true) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('model_type', modelType);
+      formData.append('enable_tracking', enableTracking);
+
+      const response = await apiClient.post('/api/track/file', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
+
+  // Get available models
+  getModels: async () => {
+    try {
+      const response = await apiClient.get('/api/models');
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
+
+  // Get device information
+  getDeviceInfo: async () => {
+    try {
+      const response = await apiClient.get('/api/device');
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
+
+  // Get session statistics
+  getSessionStats: async (sessionId) => {
+    try {
+      const response = await apiClient.get(`/api/session/${sessionId}/stats`);
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
+
+  // Health check
+  healthCheck: async () => {
+    try {
+      const response = await apiClient.get('/health');
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
+};
+
+export default apiClient;
