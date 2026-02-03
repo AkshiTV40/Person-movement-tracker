@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
-from typing import List, Optional
+from typing import List, Optional, Dict
 import asyncio
 import json
 
@@ -9,17 +9,23 @@ try:
     from ..config import config
     from ..services.tracking_service import TrackingService
     from ..models.detector_factory import ModelType
+    from ..models.pose_estimator import MediaPipePoseDetector
+    from ..models.exercise_analyzer import ExerciseAnalyzerFactory, ExerciseType
     from .schemas import (
         TrackingRequest, TrackingResponse, ModelInfo, 
-        DeviceInfo, SessionStats
+        DeviceInfo, SessionStats, ExerciseTrackingRequest,
+        ExerciseTrackingResponse
     )
 except ImportError:
     from config import config
     from services.tracking_service import TrackingService
     from models.detector_factory import ModelType
+    from models.pose_estimator import MediaPipePoseDetector
+    from models.exercise_analyzer import ExerciseAnalyzerFactory, ExerciseType
     from api.schemas import (
         TrackingRequest, TrackingResponse, ModelInfo, 
-        DeviceInfo, SessionStats
+        DeviceInfo, SessionStats, ExerciseTrackingRequest,
+        ExerciseTrackingResponse
     )
 
 app = FastAPI(
@@ -39,11 +45,16 @@ app.add_middleware(
 
 # Services
 tracking_service = TrackingService()
+exercise_tracking_service = None
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
     await tracking_service.initialize()
+    global exercise_tracking_service
+    from ..services.exercise_tracking_service import ExerciseTrackingService
+    exercise_tracking_service = ExerciseTrackingService()
+    await exercise_tracking_service.initialize()
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -212,3 +223,145 @@ async def get_session_stats(session_id: str):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "person-tracker"}
+
+# Exercise Tracking Endpoints
+
+@app.post("/api/exercise/track", response_model=ExerciseTrackingResponse)
+async def track_exercise(request: ExerciseTrackingRequest):
+    """Process frame for exercise form analysis"""
+    if not exercise_tracking_service:
+        return ExerciseTrackingResponse(
+            success=False,
+            error="Exercise tracking service not initialized"
+        )
+    
+    result = await exercise_tracking_service.process_frame(
+        image_data=request.image,
+        session_id=request.session_id,
+        exercise_type=request.exercise_type,
+        enable_tracking=request.enable_tracking
+    )
+    
+    if result['success']:
+        return ExerciseTrackingResponse(
+            success=True,
+            image=result.get('image'),
+            pose_data=result.get('pose_data'),
+            analysis=result.get('analysis'),
+            inference_time=result['inference_time']
+        )
+    else:
+        return ExerciseTrackingResponse(
+            success=False,
+            error=result.get('error')
+        )
+
+@app.post("/api/exercise/track/file")
+async def track_exercise_from_file(
+    file: UploadFile = File(...),
+    exercise_type: str = Form("squat"),
+    enable_tracking: bool = Form(True)
+):
+    """Upload image file for exercise tracking"""
+    if not exercise_tracking_service:
+        return JSONResponse(
+            status_code=500,
+            content={'error': 'Exercise tracking service not initialized'}
+        )
+    
+    try:
+        # Read file
+        contents = await file.read()
+        
+        # Convert to base64
+        import base64
+        image_data = base64.b64encode(contents).decode('utf-8')
+        
+        # Process
+        result = await exercise_tracking_service.process_frame(
+            image_data=image_data,
+            session_id="file_upload",
+            exercise_type=ExerciseType(exercise_type),
+            enable_tracking=enable_tracking
+        )
+        
+        return JSONResponse(content=result)
+    
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={'error': str(e)}
+        )
+
+@app.get("/api/exercise/types")
+async def get_exercise_types():
+    """Get supported exercise types"""
+    if not exercise_tracking_service:
+        return {"exercises": []}
+    
+    exercises = exercise_tracking_service.get_supported_exercises()
+    
+    return {
+        "exercises": [
+            {
+                "type": ex.value,
+                "name": ex.value.replace("_", " ").title()
+            }
+            for ex in exercises
+        ]
+    }
+
+@app.post("/api/exercise/reset")
+async def reset_exercise_tracking(exercise_type: str):
+    """Reset exercise tracking for a specific exercise"""
+    if not exercise_tracking_service:
+        return {"success": False, "error": "Service not initialized"}
+    
+    try:
+        ex_type = ExerciseType(exercise_type)
+        exercise_tracking_service.reset_analyzer(ex_type)
+        return {"success": True, "message": f"Reset tracking for {exercise_type}"}
+    except ValueError:
+        return {"success": False, "error": f"Invalid exercise type: {exercise_type}"}
+
+@app.websocket("/ws/exercise/track")
+async def websocket_exercise_track(websocket: WebSocket):
+    """WebSocket for real-time exercise tracking"""
+    await websocket.accept()
+    
+    session_id = f"ws_exercise_{websocket.client.host}"
+    current_exercise_type = None
+    
+    try:
+        while True:
+            # Receive frame
+            data = await websocket.receive_json()
+            image_data = data.get('image')
+            exercise_type_str = data.get('exercise_type', 'squat')
+            
+            if not image_data:
+                continue
+            
+            # Reset if exercise type changed
+            if current_exercise_type != exercise_type_str:
+                current_exercise_type = exercise_type_str
+                try:
+                    exercise_tracking_service.reset_analyzer(ExerciseType(exercise_type_str))
+                except ValueError:
+                    pass
+            
+            # Process frame
+            result = await exercise_tracking_service.process_frame(
+                image_data=image_data,
+                session_id=session_id,
+                exercise_type=ExerciseType(exercise_type_str),
+                enable_tracking=True
+            )
+            
+            # Send result
+            await websocket.send_json(result)
+    
+    except WebSocketDisconnect:
+        print(f"WebSocket disconnected: {session_id}")
+    except Exception as e:
+        await websocket.send_json({'error': str(e)})

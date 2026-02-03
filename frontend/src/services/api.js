@@ -85,6 +85,46 @@ export const api = {
       throw error;
     }
   },
+
+  // Exercise tracking
+  trackExerciseFrame: async (imageData, sessionId, exerciseType, enableTracking = true) => {
+    try {
+      const response = await apiClient.post('/api/exercise/track', {
+        image: imageData,
+        session_id: sessionId,
+        exercise_type: exerciseType,
+        enable_tracking: enableTracking
+      });
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
+
+  // Get supported exercise types
+  getExerciseTypes: async () => {
+    try {
+      const response = await apiClient.get('/api/exercise/types');
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
+
+  // Reset exercise tracking
+  resetExerciseTracking: async (exerciseType) => {
+    try {
+      const response = await apiClient.post('/api/exercise/reset', null, {
+        params: { exercise_type: exerciseType }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
 };
 
 export default apiClient;

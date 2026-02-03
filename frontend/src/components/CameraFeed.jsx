@@ -1,10 +1,36 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
-const CameraFeed = ({ videoRef, canvasRef, isActive, isProcessing }) => {
+const CameraFeed = ({ videoRef, canvasRef, isActive, isProcessing, mode, onFrameCapture }) => {
+  const captureIntervalRef = useRef(null);
+
+  useEffect(() => {
+    // Start frame capture when active and in exercise mode
+    if (isActive && mode === 'exercise' && onFrameCapture && canvasRef.current) {
+      captureIntervalRef.current = setInterval(() => {
+        if (canvasRef.current) {
+          onFrameCapture(canvasRef.current);
+        }
+      }, 100); // Capture at 10 FPS
+    } else {
+      if (captureIntervalRef.current) {
+        clearInterval(captureIntervalRef.current);
+        captureIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (captureIntervalRef.current) {
+        clearInterval(captureIntervalRef.current);
+      }
+    };
+  }, [isActive, mode, onFrameCapture]);
+
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Camera Feed</h2>
+        <h2 className="text-lg font-semibold text-gray-900">
+          {mode === 'exercise' ? 'Exercise Tracking' : 'Camera Feed'}
+        </h2>
         <div className="flex items-center space-x-2">
           {isProcessing && (
             <span className="text-sm text-primary-600 animate-pulse">Processing...</span>
@@ -12,7 +38,7 @@ const CameraFeed = ({ videoRef, canvasRef, isActive, isProcessing }) => {
           <div className={`w-3 h-3 rounded-full ${isActive ? 'bg-green-500' : 'bg-red-500'}`} />
         </div>
       </div>
-
+ 
       <div className="relative bg-black rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
         {/* Video Element */}
         <video
@@ -22,13 +48,13 @@ const CameraFeed = ({ videoRef, canvasRef, isActive, isProcessing }) => {
           muted
           className={`absolute inset-0 w-full h-full object-cover ${isActive ? 'block' : 'hidden'}`}
         />
-
+ 
         {/* Canvas for Drawing Detections */}
         <canvas
           ref={canvasRef}
           className={`absolute inset-0 w-full h-full ${isActive ? 'block' : 'hidden'}`}
         />
-
+ 
         {/* Placeholder when camera is off */}
         {!isActive && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
@@ -41,18 +67,20 @@ const CameraFeed = ({ videoRef, canvasRef, isActive, isProcessing }) => {
             </div>
           </div>
         )}
-
+ 
         {/* Processing Indicator */}
         {isProcessing && (
           <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-sm rounded-lg px-3 py-2">
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-primary-500 rounded-full animate-pulse" />
-              <span className="text-white text-sm font-medium">AI Processing</span>
+              <span className="text-white text-sm font-medium">
+                {mode === 'exercise' ? 'Analyzing Form...' : 'AI Processing'}
+              </span>
             </div>
           </div>
         )}
       </div>
-
+ 
       {/* Camera Info */}
       {isActive && (
         <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
