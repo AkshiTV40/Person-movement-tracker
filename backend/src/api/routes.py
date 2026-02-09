@@ -1,13 +1,18 @@
-from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 from typing import List, Optional, Dict
 import asyncio
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     from ..config import config
     from ..services.tracking_service import TrackingService
+    from ..services.youtube_service import YouTubeService
+    from ..services.video_analysis_service import VideoAnalysisService
     from ..models.detector_factory import ModelType
     from ..models.pose_estimator import MediaPipePoseDetector
     from ..models.exercise_analyzer import ExerciseAnalyzerFactory, ExerciseType
@@ -19,6 +24,8 @@ try:
 except ImportError:
     from config import config
     from services.tracking_service import TrackingService
+    from services.youtube_service import YouTubeService
+    from services.video_analysis_service import VideoAnalysisService
     from models.detector_factory import ModelType
     from models.pose_estimator import MediaPipePoseDetector
     from models.exercise_analyzer import ExerciseAnalyzerFactory, ExerciseType
@@ -46,15 +53,22 @@ app.add_middleware(
 # Services
 tracking_service = TrackingService()
 exercise_tracking_service = None
+youtube_service = YouTubeService()
+video_analysis_service = None
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
     await tracking_service.initialize()
-    global exercise_tracking_service
+    global exercise_tracking_service, video_analysis_service
     from ..services.exercise_tracking_service import ExerciseTrackingService
     exercise_tracking_service = ExerciseTrackingService()
     await exercise_tracking_service.initialize()
+    
+    # Initialize video analysis service
+    pose_detector = MediaPipePoseDetector()
+    analyzer = ExerciseAnalyzerFactory.create(ExerciseType.SQUAT)
+    video_analysis_service = VideoAnalysisService(pose_detector, analyzer)
 
 @app.get("/", response_class=HTMLResponse)
 async def root():

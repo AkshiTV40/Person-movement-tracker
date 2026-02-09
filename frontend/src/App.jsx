@@ -5,12 +5,13 @@ import Controls from './components/Controls';
 import TrackList from './components/TrackList';
 import ExerciseFeedback from './components/ExerciseFeedback';
 import ExerciseSelector from './components/ExerciseSelector';
+import YouTubeAnalyzer from './components/YouTubeAnalyzer';
 import { useCamera } from './hooks/useCamera';
 import { useTracking } from './hooks/useTracking';
 import { useExerciseTracking } from './hooks/useExerciseTracking';
 
 function App() {
-  const [mode, setMode] = useState('tracking'); // 'tracking' or 'exercise'
+  const [mode, setMode] = useState('tracking'); // 'tracking', 'exercise', or 'youtube'
   const [isTracking, setIsTracking] = useState(false);
   const [selectedModel, setSelectedModel] = useState('yolov8');
   const [selectedExercise, setSelectedExercise] = useState('squat');
@@ -69,7 +70,9 @@ function App() {
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Person Movement Tracker</h1>
                 <p className="text-sm text-gray-500">
-                  {mode === 'tracking' ? 'Real-time detection and tracking' : 'Exercise form analysis'}
+                  {mode === 'tracking' ? 'Real-time detection and tracking' : 
+                   mode === 'exercise' ? 'Exercise form analysis' :
+                   'YouTube video analysis'}
                 </p>
               </div>
             </div>
@@ -96,13 +99,25 @@ function App() {
                 >
                   Exercise
                 </button>
+                <button
+                  onClick={() => handleModeChange('youtube')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    mode === 'youtube'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  YouTube
+                </button>
               </div>
-              <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
-                <span className="text-sm text-gray-600">
-                  {isActive ? 'Camera Active' : 'Camera Inactive'}
-                </span>
-              </div>
+              {mode !== 'youtube' && (
+                <div className="flex items-center space-x-2">
+                  <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+                  <span className="text-sm text-gray-600">
+                    {isActive ? 'Camera Active' : 'Camera Inactive'}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -110,57 +125,61 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Camera Feed */}
-          <div className="lg:col-span-2">
-            <CameraFeed
-              videoRef={videoRef}
-              canvasRef={canvasRef}
-              isActive={isActive}
-              isProcessing={mode === 'tracking' ? isProcessing : isExerciseProcessing}
-              mode={mode}
-              onFrameCapture={mode === 'exercise' ? (frame) => {
-                processExerciseFrame(frame, selectedExercise, setExerciseAnalysis);
-              } : null}
-            />
+        {mode === 'youtube' ? (
+          <YouTubeAnalyzer />
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Camera Feed */}
+            <div className="lg:col-span-2">
+              <CameraFeed
+                videoRef={videoRef}
+                canvasRef={canvasRef}
+                isActive={isActive}
+                isProcessing={mode === 'tracking' ? isProcessing : isExerciseProcessing}
+                mode={mode}
+                onFrameCapture={mode === 'exercise' ? (frame) => {
+                  processExerciseFrame(frame, selectedExercise, setExerciseAnalysis);
+                } : null}
+              />
+            </div>
+
+            {/* Sidebar */}
+            <div className="space-y-6">
+              {mode === 'tracking' ? (
+                <>
+                  {/* Controls */}
+                  <Controls
+                    isTracking={isTracking}
+                    selectedModel={selectedModel}
+                    onStartTracking={handleStartTracking}
+                    onStopTracking={handleStopTracking}
+                    onModelChange={handleModelChange}
+                  />
+
+                  {/* Stats */}
+                  <TrackingStats stats={stats} />
+
+                  {/* Track List */}
+                  <TrackList tracks={tracks} />
+                </>
+              ) : (
+                <>
+                  {/* Exercise Selector */}
+                  <ExerciseSelector
+                    selectedExercise={selectedExercise}
+                    onExerciseChange={handleExerciseChange}
+                    isTracking={isTracking}
+                    onStartTracking={handleStartTracking}
+                    onStopTracking={handleStopTracking}
+                  />
+
+                  {/* Exercise Feedback */}
+                  <ExerciseFeedback analysis={exerciseAnalysis} />
+                </>
+              )}
+            </div>
           </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {mode === 'tracking' ? (
-              <>
-                {/* Controls */}
-                <Controls
-                  isTracking={isTracking}
-                  selectedModel={selectedModel}
-                  onStartTracking={handleStartTracking}
-                  onStopTracking={handleStopTracking}
-                  onModelChange={handleModelChange}
-                />
-
-                {/* Stats */}
-                <TrackingStats stats={stats} />
-
-                {/* Track List */}
-                <TrackList tracks={tracks} />
-              </>
-            ) : (
-              <>
-                {/* Exercise Selector */}
-                <ExerciseSelector
-                  selectedExercise={selectedExercise}
-                  onExerciseChange={handleExerciseChange}
-                  isTracking={isTracking}
-                  onStartTracking={handleStartTracking}
-                  onStopTracking={handleStopTracking}
-                />
-
-                {/* Exercise Feedback */}
-                <ExerciseFeedback analysis={exerciseAnalysis} />
-              </>
-            )}
-          </div>
-        </div>
+        )}
       </main>
     </div>
   );
