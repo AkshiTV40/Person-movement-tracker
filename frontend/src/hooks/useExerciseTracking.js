@@ -8,7 +8,7 @@ export function useExerciseTracking() {
   const lastProcessTimeRef = useRef(0);  
   const sessionIdRef = useRef(`exercise_${Date.now()}`);  
   
-  const processExerciseFrame = useCallback(async (canvas, exerciseType, setAnalysis) = 
+  const processExerciseFrame = useCallback(async (canvas, exerciseType, setAnalysis) => {
     const now = Date.now();  
     if (now - lastProcessTimeRef.current < 100) {  
       return;  

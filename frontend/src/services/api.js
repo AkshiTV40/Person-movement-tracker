@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -126,5 +126,13 @@ export const api = {
     }
   },
 };
+
+export const trackExerciseFrame = api.trackExerciseFrame;
+export const trackFrame = api.trackFrame;
+export const trackFile = api.trackFile;
+export const getExerciseTypes = api.getExerciseTypes;
+export const resetExerciseTracking = api.resetExerciseTracking;
+export const getSessionStats = api.getSessionStats;
+export const healthCheck = api.healthCheck;
 
 export default apiClient;
