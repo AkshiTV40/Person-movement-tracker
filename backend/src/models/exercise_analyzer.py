@@ -4,7 +4,7 @@ Analyzes exercise form using pose landmarks and provides feedback
 """
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 from enum import Enum
 import numpy as np
 
@@ -601,6 +601,195 @@ class LungeAnalyzer(ExerciseAnalyzer):
         return feedback
 
 
+class PlankAnalyzer(ExerciseAnalyzer):
+    """Analyzer for plank exercise form"""
+    
+    def __init__(self, pose_detector: MediaPipePoseDetector):
+        super().__init__(pose_detector)
+        self.exercise_type = ExerciseType.PLANK
+        self.rep_counter = RepCounter(ExerciseType.PLANK)
+        
+        self.max_hip_sag = 0.15
+        self.max_hipRaise = 0.15
+    
+    def analyze(self, pose_landmarks: PoseLandmarks, frame: np.ndarray) -> Dict[str, Any]:
+        """Analyze plank form"""
+        keypoints = self.pose_detector.get_keypoints(pose_landmarks)
+        
+        left_shoulder = keypoints.get("left_shoulder")
+        right_shoulder = keypoints.get("right_shoulder")
+        left_hip = keypoints.get("left_hip")
+        right_hip = keypoints.get("right_hip")
+        left_ankle = keypoints.get("left_ankle")
+        
+        shoulder_y = (left_shoulder[1] + right_shoulder[1]) / 2 if left_shoulder and right_shoulder else None
+        hip_y = (left_hip[1] + right_hip[1]) / 2 if left_hip and right_hip else None
+        ankle_y = left_ankle[1] if left_ankle else None
+        
+        self._analyze_form(keypoints, shoulder_y, hip_y, ankle_y)
+        recent_issues = self._get_recent_issues()
+        
+        return {
+            "exercise": self.exercise_type.value,
+            "rep_count": 0,
+            "state": "holding" if shoulder_y and hip_y else "start",
+            "angles": {"shoulder_hip": shoulder_y, "hip_ankle": hip_y} if shoulder_y and hip_y else {},
+            "form_issues": [issue.to_dict() for issue in recent_issues],
+            "feedback": self._generate_feedback(recent_issues)
+        }
+    
+    def _analyze_form(self, keypoints: Dict, shoulder_y: Optional[float], hip_y: Optional[float], ankle_y: Optional[float]) -> None:
+        """Analyze plank form and detect issues"""
+        if shoulder_y is None or hip_y is None:
+            return
+        
+        hip_diff = hip_y - shoulder_y
+        
+        if hip_diff > self.max_hip_sag:
+            self._add_form_issue(
+                "critical",
+                "Hips are sagging - lower body drops below shoulder line",
+                "Engage core and glutes to keep hips level with shoulders",
+                ["left_hip", "right_hip"]
+            )
+        elif hip_diff < -self.max_hipRaise:
+            self._add_form_issue(
+                "warning",
+                "Hips are too high - piking at the waist",
+                "Lower hips to align with shoulders and ankles",
+                ["left_hip", "right_hip"]
+            )
+        
+        if hip_y is not None and ankle_y is not None:
+            body_line = abs(shoulder_y - ankle_y) if shoulder_y and ankle_y else 1.0
+            if body_line > 0.3:
+                self._add_form_issue(
+                    "warning",
+                    "Body not in straight line from head to heels",
+                    "Maintain a straight plank position throughout",
+                    ["left_shoulder", "left_hip", "left_ankle"]
+                )
+    
+    def _generate_feedback(self, issues: List[FormIssue]) -> List[str]:
+        """Generate feedback messages"""
+        feedback = []
+        
+        critical_issues = [i for i in issues if i.severity == "critical"]
+        warning_issues = [i for i in issues if i.severity == "warning"]
+        
+        if critical_issues:
+            feedback.append("CRITICAL: Fix plank position immediately!")
+            for issue in critical_issues[:2]:
+                feedback.append(f"- {issue.message}")
+        
+        if warning_issues:
+            feedback.append("Form improvements needed:")
+            for issue in warning_issues[:2]:
+                feedback.append(f"- {issue.message}")
+        
+        if not issues:
+            feedback.append("Great plank form! Hold it!")
+        
+        return feedback
+
+
+class DeadliftAnalyzer(ExerciseAnalyzer):
+    """Analyzer for deadlift exercise form"""
+    
+    def __init__(self, pose_detector: MediaPipePoseDetector):
+        super().__init__(pose_detector)
+        self.exercise_type = ExerciseType.DEADLIFT
+        self.rep_counter = RepCounter(ExerciseType.DEADLIFT)
+        
+        self.max_backround = 0.15
+    
+    def analyze(self, pose_landmarks: PoseLandmarks, frame: np.ndarray) -> Dict[str, Any]:
+        """Analyze deadlift form"""
+        keypoints = self.pose_detector.get_keypoints(pose_landmarks)
+        
+        left_shoulder = keypoints.get("left_shoulder")
+        right_shoulder = keypoints.get("right_shoulder")
+        left_hip = keypoints.get("left_hip")
+        right_hip = keypoints.get("right_hip")
+        left_knee = keypoints.get("left_knee")
+        right_knee = keypoints.get("right_knee")
+        
+        shoulder_x = (left_shoulder[0] + right_shoulder[0]) / 2 if left_shoulder and right_shoulder else None
+        hip_x = (left_hip[0] + right_hip[0]) / 2 if left_hip and right_hip else None
+        shoulder_y = (left_shoulder[1] + right_shoulder[1]) / 2 if left_shoulder and right_shoulder else None
+        hip_y = (left_hip[1] + right_hip[1]) / 2 if left_hip and right_hip else None
+        
+        left_knee_angle = self.pose_detector.get_angle(pose_landmarks, "left_hip", "left_knee", "left_ankle")
+        right_knee_angle = self.pose_detector.get_angle(pose_landmarks, "right_hip", "right_knee", "right_ankle")
+        
+        self._analyze_form(keypoints, shoulder_x, hip_x, shoulder_y, hip_y, left_knee_angle, right_knee_angle)
+        recent_issues = self._get_recent_issues()
+        
+        knee_angle = (left_knee_angle + right_knee_angle) / 2
+        
+        return {
+            "exercise": self.exercise_type.value,
+            "rep_count": 0,
+            "state": "moving",
+            "angles": {"left_knee": left_knee_angle, "right_knee": right_knee_angle},
+            "form_issues": [issue.to_dict() for issue in recent_issues],
+            "feedback": self._generate_feedback(recent_issues)
+        }
+    
+    def _analyze_form(self, keypoints: Dict, shoulder_x: Optional[float], hip_x: Optional[float], shoulder_y: Optional[float], hip_y: Optional[float],
+                  left_knee_angle: float, right_knee_angle: float) -> None:
+        """Analyze deadlift form"""
+        if shoulder_x is None or hip_x is None:
+            return
+        
+        back_round = abs(shoulder_x - hip_x)
+        
+        if back_round > self.max_backround:
+            self._add_form_issue(
+                "critical",
+                "Back rounding detected (spinal flexion)",
+                "Keep back straight - hinge at hips with neutral spine",
+                ["left_shoulder", "right_shoulder", "left_hip", "right_hip"]
+            )
+        
+        avg_knee_angle = (left_knee_angle + right_knee_angle) / 2
+        if avg_knee_angle > 160:
+            self._add_form_issue(
+                "info",
+                "Full extension at top - lockout complete",
+                "Good lockout position",
+                ["left_knee", "right_knee"]
+            )
+        elif avg_knee_angle < 80:
+            self._add_form_issue(
+                "info",
+                "Deep hinge position",
+                "Keep tension on hamstrings",
+                ["left_knee", "right_knee"]
+            )
+    
+    def _generate_feedback(self, issues: List[FormIssue]) -> List[str]:
+        """Generate feedback messages"""
+        feedback = []
+        
+        critical_issues = [i for i in issues if i.severity == "critical"]
+        warning_issues = [i for i in issues if i.severity == "warning"]
+        
+        if critical_issues:
+            feedback.append("CRITICAL: Risk of back injury!")
+            for issue in critical_issues[:1]:
+                feedback.append(f"- {issue.message}")
+        
+        if warning_issues:
+            for issue in warning_issues[:2]:
+                feedback.append(f"- {issue.message}")
+        
+        if not issues:
+            feedback.append("Good deadlift form!")
+        
+        return feedback
+
+
 class ExerciseAnalyzerFactory:
     """Factory for creating exercise analyzers"""
     
@@ -621,6 +810,8 @@ class ExerciseAnalyzerFactory:
             ExerciseType.SQUAT: SquatAnalyzer,
             ExerciseType.PUSHUP: PushupAnalyzer,
             ExerciseType.LUNGE: LungeAnalyzer,
+            ExerciseType.PLANK: PlankAnalyzer,
+            ExerciseType.DEADLIFT: DeadliftAnalyzer,
         }
         
         analyzer_class = analyzers.get(exercise_type)

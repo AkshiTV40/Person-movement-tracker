@@ -69,7 +69,7 @@ async def startup_event():
     exercise_tracking_service = ExerciseTrackingService()
     await exercise_tracking_service.initialize()
     
-    # Initialize video analysis service
+    # Initialize video analysis service with default SQUAT analyzer
     pose_detector = MediaPipePoseDetector()
     analyzer = ExerciseAnalyzerFactory.create_analyzer(ExerciseType.SQUAT, pose_detector)
     video_analysis_service = VideoAnalysisService(pose_detector, analyzer)

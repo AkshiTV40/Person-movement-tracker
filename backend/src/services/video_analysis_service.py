@@ -214,29 +214,33 @@ class VideoAnalysisService:
             Tuple of (poses_list, confidence)
         """
         try:
-            # Use the pose detector to find poses
-            results = self.pose_detector.detect(frame)
+            pose_landmarks_list = self.pose_detector.detect(frame)
             
-            if results is None:
+            if not pose_landmarks_list:
                 return [], 0.0
             
-            # Extract landmarks from results
             poses = []
-            if hasattr(results, 'pose_landmarks'):
+            total_confidence = 0.0
+            
+            for pose_landmarks in pose_landmarks_list:
                 pose_data = []
-                for landmark in results.pose_landmarks.landmark:
+                for landmark in pose_landmarks.landmarks:
                     pose_data.append({
-                        "x": landmark.x,
-                        "y": landmark.y,
-                        "z": landmark.z,
-                        "visibility": landmark.visibility
+                        "id": landmark.get("id"),
+                        "x": landmark["x"],
+                        "y": landmark["y"],
+                        "z": landmark.get("z", 0.0),
+                        "visibility": landmark.get("visibility", 1.0)
                     })
+                
                 poses.append({
                     "landmarks": pose_data,
-                    "confidence": 0.9
+                    "confidence": pose_landmarks.confidence
                 })
+                total_confidence += pose_landmarks.confidence
             
-            return poses, 0.9 if poses else 0.0
+            avg_confidence = total_confidence / len(poses) if poses else 0.0
+            return poses, avg_confidence
             
         except Exception as e:
             logger.error(f"Error detecting poses: {str(e)}")
