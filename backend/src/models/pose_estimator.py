@@ -33,7 +33,7 @@ class PoseLandmarks:
         }
 
 
-class MediaPipePoseDetector(BaseDetector):
+class MediaPipePoseDetector:
     """
     MediaPipe Pose detector for body landmark detection
     Detects 33 body landmarks for comprehensive pose analysis
@@ -87,13 +87,12 @@ class MediaPipePoseDetector(BaseDetector):
             min_tracking_confidence: Minimum confidence for tracking
             device: Device to run on (cpu or cuda)
         """
-        super().__init__(device=device)
-        
         if not MEDIAPIPE_AVAILABLE:
             raise ImportError(
                 "MediaPipe is not installed. Install it with: pip install mediapipe"
             )
         
+        self.device = device
         self.model_complexity = model_complexity
         self.min_detection_confidence = min_detection_confidence
         self.min_tracking_confidence = min_tracking_confidence
@@ -102,6 +101,7 @@ class MediaPipePoseDetector(BaseDetector):
         self.mp_pose = mp.solutions.pose
         self.mp_drawing = mp.solutions.drawing_utils
         self.pose = None
+        self.model_loaded = False
         
         self._load_model()
     

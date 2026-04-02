@@ -102,6 +102,28 @@ export const api = {
     }
   },
 
+  // Analyze uploaded exercise video
+  trackExerciseVideo: async (file, exerciseType = 'squat', referenceUrl = null, maxSeconds = 10) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('exercise_type', exerciseType);
+      if (referenceUrl) {
+        formData.append('reference_url', referenceUrl);
+      }
+      formData.append('max_seconds', maxSeconds);
+
+      const response = await apiClient.post('/api/exercise/track/video', formData, {
+        headers: {'Content-Type': 'multipart/form-data'},
+        timeout: 120000,
+      });
+      return response.data;
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  },
+
   // Get supported exercise types
   getExerciseTypes: async () => {
     try {
@@ -128,6 +150,7 @@ export const api = {
 };
 
 export const trackExerciseFrame = api.trackExerciseFrame;
+export const trackExerciseVideo = api.trackExerciseVideo;
 export const trackFrame = api.trackFrame;
 export const trackFile = api.trackFile;
 export const getExerciseTypes = api.getExerciseTypes;

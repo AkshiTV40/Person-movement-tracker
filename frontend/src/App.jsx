@@ -10,6 +10,7 @@ import YouTubeAnalyzer from './components/YouTubeAnalyzer';
 import { useCamera } from './hooks/useCamera';
 import { useTracking } from './hooks/useTracking';
 import { useExerciseTracking } from './hooks/useExerciseTracking';
+import { trackExerciseVideo } from './services/api';
 
 function App() {
   const [mode, setMode] = useState('tracking'); // 'tracking', 'exercise', or 'youtube'
@@ -24,6 +25,10 @@ function App() {
   });
   const [tracks, setTracks] = useState([]);
   const [exerciseAnalysis, setExerciseAnalysis] = useState(null);
+  const [videoAnalysisResult, setVideoAnalysisResult] = useState(null);
+  const [videoFile, setVideoFile] = useState(null);
+  const [referenceUrl, setReferenceUrl] = useState('');
+  const [isVideoAnalyzing, setIsVideoAnalyzing] = useState(false);
 
   const { videoRef, canvasRef, startCamera, stopCamera, isActive } = useCamera();
   const { processFrame, isProcessing } = useTracking();
@@ -46,6 +51,34 @@ function App() {
   const handleExerciseChange = (exercise) => {
     setSelectedExercise(exercise);
     resetExercise();
+  };
+
+  const handleVideoFileChange = (event) => {
+    setVideoFile(event.target.files?.[0] || null);
+    setVideoAnalysisResult(null);
+  };
+
+  const handleReferenceUrlChange = (event) => {
+    setReferenceUrl(event.target.value);
+  };
+
+  const analyzeUploadedVideo = async () => {
+    if (!videoFile) {
+      alert('Please upload a video clip first.');
+      return;
+    }
+
+    setIsVideoAnalyzing(true);
+
+    try {
+      const result = await trackExerciseVideo(videoFile, selectedExercise, referenceUrl || null, 10);
+      setVideoAnalysisResult(result);
+    } catch (error) {
+      console.error('Video analysis failed:', error);
+      alert('Video analysis failed. See console for details.');
+    } finally {
+      setIsVideoAnalyzing(false);
+    }
   };
 
   const handleModeChange = (newMode) => {
@@ -197,6 +230,55 @@ function App() {
                     onStartTracking={handleStartTracking}
                     onStopTracking={handleStopTracking}
                   />
+
+                  {/* Upload & analyze 5-10s exercise video */}
+                  <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload 5-10s Exercise Clip</h3>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      onChange={handleVideoFileChange}
+                      className="w-full mb-3"
+                    />
+                    <input
+                      type="text"
+                      value={referenceUrl}
+                      onChange={handleReferenceUrlChange}
+                      placeholder="Optional YouTube reference URL"
+                      className="w-full p-2 mb-3 border border-gray-300 rounded-lg"
+                    />
+                    <button
+                      onClick={analyzeUploadedVideo}
+                      disabled={!videoFile || isVideoAnalyzing}
+                      className={`w-full py-2 rounded-lg font-semibold text-white transition duration-200 ${
+                        !videoFile || isVideoAnalyzing
+                          ? 'bg-gray-400 cursor-not-allowed'
+                          : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
+                    >
+                      {isVideoAnalyzing ? 'Analyzing video...' : 'Analyze uploaded clip'}
+                    </button>
+                  </div>
+
+                  {/* Video Analysis Summary */}
+                  {videoAnalysisResult && (
+                    <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Video analysis results</h3>
+                      <p className="text-sm text-gray-700 mb-2">Form score: {videoAnalysisResult.user_form_score}</p>
+                      <p className="text-sm text-gray-700 mb-2">Comparison: {videoAnalysisResult.comparison ? `${videoAnalysisResult.comparison.score_gap > 0 ? 'Lower than reference' : 'Higher than reference'}` : 'Reference not available'}</p>
+                      <p className="text-sm text-gray-700 mb-2">AI guidance: {videoAnalysisResult.ai_guidance}</p>
+                      {videoAnalysisResult.reference_tutorials && videoAnalysisResult.reference_tutorials.length > 0 && (
+                        <div className="mt-3">
+                          <span className="text-xs font-semibold text-gray-500 uppercase">Recommended tutorials</span>
+                          <ul className="list-disc list-inside text-sm text-blue-700 mt-2">
+                            {videoAnalysisResult.reference_tutorials.map((link, idx) => (
+                              <li key={idx}><a href={link} target="_blank" rel="noreferrer" className="underline">{link}</a></li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Exercise Feedback */}
                   <ExerciseFeedback analysis={exerciseAnalysis} />

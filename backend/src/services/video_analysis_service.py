@@ -157,6 +157,51 @@ class VideoAnalysisService:
         except Exception as e:
             logger.error(f"Error analyzing frames: {str(e)}")
             raise
+
+    async def analyze_video_file(self, video_path: str, exercise_type: Optional[str] = None, max_seconds: int = 10,
+                                 sample_rate: float = 2.0, callback=None) -> VideoAnalysisResult:
+        """Analyze a local video file by sampling frames"""
+        cap = None
+        try:
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                raise ValueError(f"Cannot open video file: {video_path}")
+
+            fps = cap.get(cv2.CAP_PROP_FPS) if cap.get(cv2.CAP_PROP_FPS) > 0 else 30.0
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            max_frames = min(total_frames, int(max_seconds * fps)) if total_frames > 0 else int(max_seconds * fps)
+            frame_interval = max(1, int(fps // sample_rate))
+
+            frames = []
+            frame_idx = 0
+            collected = 0
+
+            while cap.isOpened() and collected < max_frames:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                if frame_idx % frame_interval == 0:
+                    # Resize and normalize
+                    frame_resized = cv2.resize(frame, (640, 480))
+                    frames.append(frame_resized)
+                    collected += 1
+
+                frame_idx += 1
+
+            if not frames:
+                raise ValueError("No frames extracted from video file")
+
+            analysis_result = await self.analyze_frames(frames, exercise_type=exercise_type, callback=callback)
+            return analysis_result
+
+        except Exception as e:
+            logger.error(f"Error analyzing video file: {str(e)}")
+            raise
+
+        finally:
+            if cap is not None:
+                cap.release()
     
     def _detect_poses(self, frame: np.ndarray) -> tuple:
         """

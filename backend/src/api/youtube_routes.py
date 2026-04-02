@@ -102,7 +102,7 @@ def setup_youtube_routes(app):
                 from ..models.exercise_analyzer import ExerciseAnalyzerFactory
                 
                 pose_detector = MediaPipePoseDetector()
-                analyzer = ExerciseAnalyzerFactory.create(ExerciseType.SQUAT)
+                analyzer = ExerciseAnalyzerFactory.create_analyzer(ExerciseType.SQUAT, pose_detector)
                 video_analysis_service = VideoAnalysisService(pose_detector, analyzer)
                 
                 analysis_result = await video_analysis_service.analyze_frames(

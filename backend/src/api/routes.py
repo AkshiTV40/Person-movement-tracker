@@ -5,6 +5,9 @@ from typing import List, Optional, Dict
 import asyncio
 import json
 import logging
+import os
+import tempfile
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,7 @@ tracking_service = TrackingService()
 exercise_tracking_service = None
 youtube_service = YouTubeService()
 video_analysis_service = None
+guidance_service = None
 
 @app.on_event("startup")
 async def startup_event():
@@ -67,8 +71,16 @@ async def startup_event():
     
     # Initialize video analysis service
     pose_detector = MediaPipePoseDetector()
-    analyzer = ExerciseAnalyzerFactory.create(ExerciseType.SQUAT)
+    analyzer = ExerciseAnalyzerFactory.create_analyzer(ExerciseType.SQUAT, pose_detector)
     video_analysis_service = VideoAnalysisService(pose_detector, analyzer)
+
+    # Optional AI guidance using Qwen transformer model
+    try:
+        from ..services.guidance_service import GuidanceService
+        guidance_service = GuidanceService()
+    except Exception as e:
+        logger.warning(f"Could not initialize GuidanceService: {e}")
+        guidance_service = None
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -307,6 +319,97 @@ async def track_exercise_from_file(
             content={'error': str(e)}
         )
 
+@app.post("/api/exercise/track/video")
+async def track_exercise_video(
+    file: UploadFile = File(...),
+    exercise_type: str = Form("squat"),
+    reference_url: Optional[str] = Form(None),
+    max_seconds: int = Form(10)
+):
+    """Upload a 5-10 second video and run exercise form analysis plus comparison feedback"""
+    if not video_analysis_service:
+        return JSONResponse(status_code=500, content={'error': 'Video analysis service not initialized'})
+
+    temp_path = os.path.join(tempfile.gettempdir(), f"exercise_upload_{int(time.time() * 1000)}.mp4")
+
+    try:
+        # Save upload to disk
+        contents = await file.read()
+        with open(temp_path, 'wb') as out_file:
+            out_file.write(contents)
+
+        # Analyze the uploaded clip
+        user_result = await video_analysis_service.analyze_video_file(
+            video_path=temp_path,
+            exercise_type=exercise_type,
+            max_seconds=max_seconds,
+            sample_rate=2.0
+        )
+
+        reference_analysis = None
+        if reference_url:
+            fetch_success, ref_path, fetch_error = await youtube_service.fetch_video(reference_url, max_duration=120)
+            if fetch_success and ref_path:
+                try:
+                    reference_analysis = await video_analysis_service.analyze_video_file(
+                        video_path=ref_path,
+                        exercise_type=exercise_type,
+                        max_seconds=max_seconds,
+                        sample_rate=2.0
+                    )
+                finally:
+                    youtube_service.cleanup_video(ref_path)
+            else:
+                logger.warning(f"Unable to fetch reference video: {fetch_error}")
+
+        training_links = {
+            'squat': ['https://www.youtube.com/watch?v=aclHkVaku9U', 'https://www.youtube.com/watch?v=Dy28eq2PjcM'],
+            'pushup': ['https://www.youtube.com/watch?v=IODxDxX7oi4', 'https://www.youtube.com/watch?v=_l3ySVKYVJ8'],
+            'lunge': ['https://www.youtube.com/watch?v=QOVaHwm-Q6U'],
+            'plank': ['https://www.youtube.com/watch?v=pSHjTRCQxIw']
+        }
+
+        ai_summary = guidance_service.generate_guidance(
+            exercise_type=exercise_type,
+            user_summary={
+                'overall_form_score': user_result.overall_form_score,
+                'summary': user_result.summary
+            },
+            reference_summary={
+                'overall_form_score': reference_analysis.overall_form_score,
+                'summary': reference_analysis.summary
+            } if reference_analysis else None
+        ) if guidance_service else 'Guidance service is unavailable on the server.'
+
+        comparison = None
+        if reference_analysis:
+            comparison = {
+                'user_score': round(user_result.overall_form_score, 1),
+                'reference_score': round(reference_analysis.overall_form_score, 1),
+                'score_gap': round(user_result.overall_form_score - reference_analysis.overall_form_score, 1)
+            }
+
+        return {
+            'success': True,
+            'exercise_type': exercise_type,
+            'total_frames': user_result.total_frames,
+            'analyzed_frames': user_result.analyzed_frames,
+            'user_analysis': user_result.summary,
+            'user_form_score': round(user_result.overall_form_score, 1),
+            'reference_analysis': reference_analysis.summary if reference_analysis else None,
+            'comparison': comparison,
+            'reference_tutorials': training_links.get(exercise_type.lower(), []),
+            'ai_guidance': ai_summary
+        }
+
+    except Exception as e:
+        logger.error(f"Error in track_exercise_video: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
 @app.get("/api/exercise/types")
 async def get_exercise_types():
     """Get supported exercise types"""
@@ -379,3 +482,11 @@ async def websocket_exercise_track(websocket: WebSocket):
         print(f"WebSocket disconnected: {session_id}")
     except Exception as e:
         await websocket.send_json({'error': str(e)})
+
+
+# If youtube_routes module is present, wire its routes too
+try:
+    from .youtube_routes import setup_youtube_routes
+    setup_youtube_routes(app)
+except Exception as e:
+    logger.info(f"YouTube route registration skipped: {e}")
