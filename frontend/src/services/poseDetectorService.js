@@ -1,6 +1,3 @@
-import { Pose } from '@mediapipe/pose';
-import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
-
 class PoseDetectorService {
   constructor() {
     this.pose = null;
@@ -17,29 +14,31 @@ class PoseDetectorService {
 
     this.onResultsCallback = onResults;
 
-    this.pose = new Pose({
-      locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
-      }
-    });
-
-    this.pose.setOptions({
-      modelComplexity: 1,
-      smoothLandmarks: true,
-      enableSegmentation: false,
-      smoothSegmentation: false,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-
-    this.pose.onResults((results) => {
-      this.lastResults = results;
-      if (this.onResultsCallback) {
-        this.onResultsCallback(results);
-      }
-    });
-
     try {
+      await this.loadMediaPipeScripts();
+      
+      this.pose = new window.MediaPipePose({
+        locateFile: (file) => {
+          return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+        }
+      });
+
+      this.pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        smoothSegmentation: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+
+      this.pose.onResults((results) => {
+        this.lastResults = results;
+        if (this.onResultsCallback) {
+          this.onResultsCallback(results);
+        }
+      });
+
       await this.pose.initialize();
       this.isReady = true;
       console.log('MediaPipe Pose initialized successfully');
@@ -48,6 +47,35 @@ class PoseDetectorService {
       console.error('Error initializing MediaPipe Pose:', error);
       return false;
     }
+  }
+
+  loadMediaPipeScripts() {
+    return new Promise((resolve, reject) => {
+      if (window.MediaPipePose) {
+        resolve();
+        return;
+      }
+
+      const scripts = [
+        'https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js',
+        'https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js',
+        'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js'
+      ];
+
+      let loaded = 0;
+      scripts.forEach(src => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => {
+          loaded++;
+          if (loaded === scripts.length) {
+            resolve();
+          }
+        };
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    });
   }
 
   async detectPose(imageElement) {
@@ -75,11 +103,11 @@ class PoseDetectorService {
   drawPose(canvasCtx, width, height) {
     if (!this.lastResults) return;
 
-    if (this.lastResults.poseLandmarks) {
-      drawConnectors(canvasCtx, this.lastResults.poseLandmarks, Pose.CONNECTIONS, 
-        { color: (255, 255, 255), lineWidth: 2 });
-      drawLandmarks(canvasCtx, this.lastResults.poseLandmarks, 
-        { color: (0, 255, 0), lineWidth: 2, radius: 4 });
+    if (this.lastResults.poseLandmarks && window.drawConnectors && window.drawLandmarks) {
+      window.drawConnectors(canvasCtx, this.lastResults.poseLandmarks, window.PosePoseConnections, 
+        { color: '#FFFFFF', lineWidth: 2 });
+      window.drawLandmarks(canvasCtx, this.lastResults.poseLandmarks, 
+        { color: '#00FF00', lineWidth: 2, radius: 4 });
     }
   }
 
@@ -131,8 +159,6 @@ class PoseDetectorService {
       state = 'bottom';
     } else if (avgKneeAngle < 140) {
       state = 'descending';
-    } else if (avgKneeAngle > 160) {
-      state = 'standing';
     }
 
     if (avgKneeAngle > 100 && avgHipAngle > 100) {
@@ -143,12 +169,6 @@ class PoseDetectorService {
     const kneeDiff = Math.abs(leftKneeAngle - rightKneeAngle);
     if (kneeDiff > 20) {
       issues.push({ severity: 'warning', message: 'Uneven knee bend', suggestion: 'Keep knees balanced' });
-      formScore -= 10;
-    }
-
-    const hipDiff = Math.abs(leftHipAngle - rightHipAngle);
-    if (hipDiff > 20) {
-      issues.push({ severity: 'warning', message: 'Uneven hips', suggestion: 'Keep hips level' });
       formScore -= 10;
     }
 
