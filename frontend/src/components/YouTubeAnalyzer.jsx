@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { API_BASE_URL } from '../services/api';
+
+const isProduction = import.meta.env.PROD;
+const API_BASE_URL = isProduction ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
 
 function YouTubeAnalyzer() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
