@@ -13,16 +13,16 @@ export const useLocalExerciseTracking = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   
   const currentExerciseRef = useRef('squat');
-  const lastStateRef = useRef('standing');
+  const lastStateRef = useRef('start');
   const sessionIdRef = useRef(`local_session_${Date.now()}`);
   const userIdRef = useRef(`user_${localStorage.getItem('device_id') || Math.random().toString(36).substr(2, 9)}`);
 
   useEffect(() => {
     localStorage.setItem('device_id', userIdRef.current);
     loadHistory();
+    initializePoseDetector();
     
     return () => {
-      poseDetector.destroy();
     };
   }, []);
 
@@ -31,10 +31,11 @@ export const useLocalExerciseTracking = () => {
     setExerciseHistory(history);
   }, []);
 
-  const initialize = useCallback(async (onResults) => {
+  const initializePoseDetector = useCallback(async () => {
     try {
-      const success = await poseDetector.initialize(onResults);
+      const success = await poseDetector.initialize();
       setIsInitialized(success);
+      console.log('Pose detector initialized:', success);
       return success;
     } catch (err) {
       console.error('Failed to initialize pose detector:', err);
@@ -43,59 +44,65 @@ export const useLocalExerciseTracking = () => {
     }
   }, []);
 
-  const processFrame = useCallback((videoElement) => {
-    return new Promise(async (resolve) => {
-      if (!isInitialized) {
-        resolve(null);
-        return;
+  const initialize = useCallback(async (onResults) => {
+    return await initializePoseDetector();
+  }, [initializePoseDetector]);
+
+  const processFrame = useCallback(async (videoElement) => {
+    if (!isInitialized) {
+      await initializePoseDetector();
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const results = await poseDetector.detectPose(videoElement);
+      
+      if (!results || !results.poseLandmarks) {
+        setIsProcessing(false);
+        return null;
       }
 
-      try {
-        const results = await poseDetector.detectPose(videoElement);
+      const landmarks = results.poseLandmarks;
+      const exerciseType = currentExerciseRef.current;
+      const analysis = poseDetector.analyze(exerciseType, landmarks);
+
+      if (analysis && analysis.valid) {
+        setCurrentAnalysis(analysis);
         
-        if (!results || !results.poseLandmarks) {
-          resolve(null);
-          return;
+        if (analysis.formScore !== undefined) {
+          setFormScore(analysis.formScore);
         }
 
-        const landmarks = results.poseLandmarks;
-        const exerciseType = currentExerciseRef.current;
-        const analysis = poseDetector.analyze(exerciseType, landmarks);
-
-        if (analysis && analysis.valid) {
-          setCurrentAnalysis(analysis);
-          
-          if (analysis.formScore) {
-            setFormScore(analysis.formScore);
+        if (lastStateRef.current !== analysis.state) {
+          if (lastStateRef.current === 'end' && analysis.state === 'start') {
+            setRepCount(prev => prev + 1);
           }
-
-          if (lastStateRef.current !== analysis.state) {
-            if (lastStateRef.current === 'bottom' && analysis.state === 'standing') {
-              setRepCount(prev => prev + 1);
-            }
-            lastStateRef.current = analysis.state;
-          }
-
-          resolve({
-            landmarks,
-            analysis,
-            timestamp: Date.now()
-          });
-        } else {
-          resolve(null);
+          lastStateRef.current = analysis.state;
         }
-      } catch (err) {
-        console.error('Error processing frame:', err);
-        resolve(null);
+
+        setIsProcessing(false);
+        return {
+          landmarks,
+          analysis,
+          timestamp: Date.now()
+        };
       }
-    });
-  }, [isInitialized]);
+      
+      setIsProcessing(false);
+      return null;
+    } catch (err) {
+      console.error('Error processing frame:', err);
+      setIsProcessing(false);
+      return null;
+    }
+  }, [isInitialized, initializePoseDetector]);
 
   const setExercise = useCallback((exerciseType) => {
     currentExerciseRef.current = exerciseType;
     setRepCount(0);
     setFormScore(100);
-    lastStateRef.current = 'standing';
+    lastStateRef.current = 'start';
   }, []);
 
   const saveSession = useCallback(async () => {
