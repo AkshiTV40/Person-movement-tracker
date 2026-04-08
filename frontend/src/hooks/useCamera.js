@@ -13,8 +13,11 @@ export const useCamera = (options = {}) => {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const intervalRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
   
   const [isActive, setIsActive] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState(null);
   const [lightingCondition, setLightingCondition] = useState('unknown');
   const [frameCount, setFrameCount] = useState(0);
@@ -119,6 +122,53 @@ export const useCamera = (options = {}) => {
     setLightingCondition('unknown');
   }, []);
 
+  const startRecording = useCallback(async (onRecordingComplete) => {
+    if (!streamRef.current) {
+      setError('Camera not active');
+      return false;
+    }
+
+    try {
+      recordedChunksRef.current = [];
+      
+      const mediaRecorder = new MediaRecorder(streamRef.current, {
+        mimeType: 'video/webm;codecs=vp9'
+      });
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+        if (onRecordingComplete) {
+          onRecordingComplete(blob);
+        }
+      };
+
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start(100);
+      setIsRecording(true);
+      
+      return true;
+    } catch (err) {
+      console.error('Error starting recording:', err);
+      setError('Failed to start recording');
+      return false;
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      return true;
+    }
+    return false;
+  }, []);
+
   const captureFrame = useCallback(() => {
     if (!videoRef.current || !isActive) {
       return null;
@@ -192,6 +242,7 @@ export const useCamera = (options = {}) => {
     videoRef,
     canvasRef,
     isActive,
+    isRecording,
     error,
     lightingCondition,
     frameCount,
@@ -200,7 +251,9 @@ export const useCamera = (options = {}) => {
     captureFrame,
     getImageElement,
     startCaptureLoop,
-    analyzeLighting
+    analyzeLighting,
+    startRecording,
+    stopRecording
   };
 };
 

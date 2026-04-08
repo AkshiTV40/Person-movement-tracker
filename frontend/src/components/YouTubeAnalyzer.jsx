@@ -50,7 +50,7 @@ function YouTubeAnalyzer() {
       if (data.success) {
         setVideoInfo(data);
       } else {
-        setError(data.error || 'Failed to get video information');
+        setError(data.error || data.detail || 'Failed to get video information');
       }
     } catch (err) {
       setError(`Error: ${err.message}`);
@@ -84,7 +84,7 @@ function YouTubeAnalyzer() {
         setAnalysisResult(data);
         setProgress(100);
       } else {
-        setError(data.detail || 'Analysis failed');
+        setError(data.detail || data.error || 'Analysis failed');
       }
     } catch (err) {
       setError(`Error: ${err.message}`);

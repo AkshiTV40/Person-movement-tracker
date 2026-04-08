@@ -218,6 +218,31 @@ class TestPlankAnalyzer:
             "Engage core to keep body straight",
             ["left_hip", "right_hip"]
         )
+
+
+class TestGuidanceService:
+    """Test GuidanceService motion classification"""
+
+    def test_motion_to_words_and_classify(self):
+        from services.guidance_service import GuidanceService
+
+        guidance = GuidanceService()
+
+        # Synthetic keypoints representing a squat-like motion
+        keypoints = {
+            "left_shoulder": (0.5, 0.3),
+            "left_hip": (0.5, 0.5),
+            "left_knee": (0.5, 0.7),
+            "left_ankle": (0.5, 0.9),
+        }
+
+        description = guidance.motion_to_words(keypoints)
+        assert "squat" in description or "stand" in description or description
+
+        from models.exercise_analyzer import ExerciseType
+        inferred = guidance.classify_exercise_from_description("user does low knee bend squat movement")
+        assert inferred == ExerciseType.SQUAT
+
         
         feedback = analyzer._generate_feedback([critical_issue])
         
